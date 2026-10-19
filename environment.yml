@@ -1,0 +1,15 @@
+name: cs2parse
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - polars
+  - pyarrow
+  - tqdm
+  - ipykernel
+  - pip
+  - pip:
+      - demoparser2
+      - awpy

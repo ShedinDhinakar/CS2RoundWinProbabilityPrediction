@@ -1,0 +1,8 @@
+# CS2 demos are 300-800 MB each, above GitHub's 100 MB file limit
+*.dem
+
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.claude/
+.DS_Store
