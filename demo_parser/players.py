@@ -37,6 +37,32 @@ NUM_STATE = ("health", "armor_value", "current_equip_value", "flashbangs", "smok
 NULL_WHEN_DEAD = (*POSITION, "yaw", "pitch", "active_weapon", "primary_weapon", "secondary_weapon")
 
 
+MAX_FRAME_GAP = 64  # ticks to look back for a recorded frame before giving up
+
+
+def _snapshots_at(recording, ticks: list[int]) -> pl.DataFrame:
+    """Player state at each tick, labelled with the requested tick.
+
+    Demos do not record a frame on every tick (server hitches), and awpy silently returns no rows
+    for those ticks. They take the latest earlier frame instead, which is still only past data.
+    """
+    snap = recording.snapshots(ticks=ticks)
+    missing = sorted(set(ticks) - set(snap["tick"].unique().to_list()))
+    filled = []
+    for back in range(1, MAX_FRAME_GAP + 1):
+        if not missing:
+            break
+        wanted = {t - back: t for t in missing}
+        got = recording.snapshots(ticks=sorted(wanted)).filter(pl.col("tick").is_in(list(wanted)))
+        if got.height:
+            filled.append(got.with_columns(pl.col("tick").replace_strict(wanted, return_dtype=pl.Int32)))
+            found = {wanted[t] for t in got["tick"].unique().to_list()}
+            missing = [t for t in missing if t not in found]
+    if missing:
+        raise ValueError(f"no recorded frame within {MAX_FRAME_GAP} ticks before ticks {missing[:5]}")
+    return pl.concat([snap, *filled]) if filled else snap
+
+
 def player_frame(demo, samples: pl.DataFrame) -> pl.DataFrame:
     """One row per (sample tick, player) with slot label, current state and past positions.
 
@@ -48,8 +74,7 @@ def player_frame(demo, samples: pl.DataFrame) -> pl.DataFrame:
         base_ticks = samples.filter(pl.col("part") == part)["tick"]
         ticks = sorted({t - off for t in base_ticks.to_list() for off in (0, *HISTORY_OFFSETS)})
         snap = (
-            demo.parts[part]
-            .snapshots(ticks=ticks)
+            _snapshots_at(demo.parts[part], ticks)
             .filter(pl.col("side").is_in(list(SIDES)), pl.col("steamid").is_not_null())
             .select("tick", "steamid", "side", *PLAYER_PROPS)
             .rename(PLAYER_PROPS)

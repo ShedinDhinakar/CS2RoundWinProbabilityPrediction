@@ -19,6 +19,7 @@ demo_parser/               demo -> CSV parser (Python package)
   players.py               per-player state from awpy snapshots
   events.py                rounds, bomb, utility events, scoreboard stats
   utility_slots.py         first-free-slot layout of smokes / fires
+  leakage_check.py         verifies no row uses data from after its tick
   discover.py              finds demos, groups split recordings (-p1, -p2)
   config.py                tick constants, sampling, slot counts
   sample_data/             input demos (.dem files are git-ignored, see its README)
@@ -148,6 +149,30 @@ The lossless source of the utility slots: `match_id, part, round_num, kind (smok
 grenade (smoke/molotov/incendiary), slot, start_tick, end_tick, lifetime_ticks, X, Y, Z`.
 Start and end come from the `smokegrenade_detonate/expired` and `inferno_startburn/expire` game
 events; `end_tick` includes fires put out by smokes and is cut at the round's end.
+
+## No future data in any row
+
+A row at tick T may only use what has happened up to T. `python -m demo_parser.leakage_check`
+verifies this (exit code 1 on failure) and passes on the sample match:
+
+- **Truncation test:** each match is re-parsed as if the demo ended at T: every event, game
+  event and fire entity after T is removed. All rows at or before T must be identical to the
+  full parse in every column except the `ct_win` label. Cut points are random rows plus the
+  exact ticks of (and 1 tick before) plants, kills, smoke pops and fire starts: 42 cuts on
+  Overpass and Dust2, 48,559 rows compared, every one identical (split matches are skipped).
+- **Snapshot test:** no player is dead before their death event, or below the health their
+  damage or death events so far allow (99,080 player-rows over all 3 maps, 0 violations).
+
+Values that do come from later ticks are used only where they cannot leak: a round's end tick
+decides which rows exist and fills the label; a smoke/fire's end tick only answers "already
+gone at this tick?", which a viewer can see; multi-kill rounds are credited after their round.
+
+The test found and fixed two problems:
+- Two grenades starting on the same tick were ordered arbitrarily into slots, so a later event
+  could swap them. Ties are now broken by position, known when the grenade starts.
+- Demos skip recording some ticks (572 of 218,905 on Overpass, server hitches). awpy silently
+  returns nothing for those ticks, which showed as all ten players dead. A tick with no frame now
+  uses the latest earlier frame; a gap longer than 1 s stops the parse with an error.
 
 ## How the parser was checked (sample match, 3 maps, 99 rounds)
 

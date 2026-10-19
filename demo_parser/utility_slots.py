@@ -14,7 +14,8 @@ SLOT_FIELDS = {
 
 def assign_slots(util: pl.DataFrame, n_slots: dict[str, int]) -> pl.DataFrame:
     """Add `slot`: first free slot per (part, round, kind), null when every slot is taken."""
-    ordered = util.with_row_index("_row").sort("part", "round_num", "kind", "start_tick")
+    # same-tick starts are ordered by position, which is known when the grenade starts
+    ordered = util.with_row_index("_row").sort("part", "round_num", "kind", "start_tick", "X", "Y", "Z")
     slots, group, busy_until = [], None, []
     for part, round_num, kind, start, end in ordered.select("part", "round_num", "kind", "start_tick", "end_tick").iter_rows():
         if (part, round_num, kind) != group:
